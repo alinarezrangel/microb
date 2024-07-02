@@ -3,9 +3,12 @@
 //
 
 #include <lauxlib.h>
+#include <SDL_ttf.h>
+
 #include "microb/window.h"
 #include "luart.h"
 #include "utils.h"
+#include "text.h"
 
 void microb_global_init(void)
 {
@@ -14,10 +17,12 @@ void microb_global_init(void)
         fprintf(stderr, "Could not initialize: %s\n", SDL_GetError());
         abort();
     };
+    TTF_Init();
 }
 
 void microb_global_uninit(void)
 {
+    TTF_Quit();
     SDL_Quit();
 }
 
@@ -40,7 +45,7 @@ static int32_t microb_translate_window_flags(int32_t f)
     return out;
 }
 
-static void microb_window_draw(struct microb_window *self);
+static void microb_window_draw(lua_State *L, struct microb_window *self);
 
 void microb_push_window(lua_State *L,
                         int titleidx,
@@ -56,6 +61,10 @@ void microb_push_window(lua_State *L,
         return;
     }
 
+    lua_newtable(L);
+    int component_list_ref = microb_ref(L, -1);
+    lua_pop(L, 1);
+
     microb_window *win = lua_newuserdatauv(L, sizeof(microb_window), 0);
     win->backing_window = SDL_CreateWindow(
             title, x, y, w, h,
@@ -63,6 +72,7 @@ void microb_push_window(lua_State *L,
     );
     win->freed = false;
     win->renderer = SDL_CreateRenderer(win->backing_window, -1, SDL_RENDERER_ACCELERATED);
+    win->component_list_ref = component_list_ref;
     win->vtable.draw = &microb_window_draw;
     luaL_setmetatable(L, MICROB_META_WINDOW);
 
@@ -71,20 +81,32 @@ void microb_push_window(lua_State *L,
     lua_pushnil(L);
     lua_copy(L, lua_gettop(L) - 2, lua_gettop(L));
     // [win, wlist, win]
-    lua_len(L, -2);
-    lua_Integer n = lua_tointeger(L, -1);
-    lua_pop(L, 1);
-    lua_seti(L, lua_gettop(L) - 1, n + 1);
+    lua_Integer n = luaL_len(L, -2);
+    lua_seti(L, -2, n + 1);
     lua_pop(L, 1);
     // [win]
 }
 
-static void microb_window_draw(struct microb_window *self)
+static void microb_window_draw(lua_State *L, struct microb_window *self)
 {
+    SDL_SetRenderDrawColor(self->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
     SDL_RenderClear(self->renderer);
     SDL_SetRenderDrawColor(self->renderer, 0xFF, 0xFF, 0x00, 0xFF);
     SDL_Rect rect = {.x = 20, .y = 20, .w = 100, .h = 100};
     SDL_RenderFillRect(self->renderer, &rect);
+
+    microb_get(L, self->component_list_ref);
+    // [comps]
+    lua_Integer n = luaL_len(L, -1);
+    for(lua_Integer i = 1; i <= n; i++)
+    {
+        lua_geti(L, -1, i);
+        // [comps, el]
+        microb_text *text = microb_to_text(L, -1);
+        (*text->header.vtable.draw)(L, self, MICROB_COMPONENT(text));
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
 }
 
 void microb_release_window(lua_State *L, int windowidx)
@@ -92,6 +114,8 @@ void microb_release_window(lua_State *L, int windowidx)
     microb_window *win = microb_to_user_data(L, windowidx, MICROB_META_WINDOW);
     if(!win->freed)
     {
+        microb_unref(L, win->component_list_ref);
+
         SDL_DestroyRenderer(win->renderer);
         SDL_DestroyWindow(win->backing_window);
         win->freed = true;

@@ -10,7 +10,11 @@ add_library(microb SHARED
         src/utils.c
         src/utils.h
         src/luart.c
-        src/luart.h)
+        src/luart.h
+        src/component.c
+        src/component.h
+        src/text.c
+        src/text.h)
 target_include_directories(microb PRIVATE include)
 pkg_check_modules(LUA REQUIRED lua5.4)
 pkg_check_modules(SDL2 REQUIRED sdl2)
@@ -36,3 +40,5 @@ endmacro()
 add_executable(test-hello-world
         tests/non-automated/hello-world.c)
 configure_test_case(test-hello-world)
+add_executable(test-hello tests/non-automated/hello.c)
+configure_test_case(test-hello)

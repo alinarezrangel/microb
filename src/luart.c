@@ -6,6 +6,7 @@
 #include "luart.h"
 #include "utils.h"
 #include "microb/window.h"
+#include "text.h"
 
 static int microb_lua_int_to_int(lua_Integer i)
 {
@@ -32,6 +33,14 @@ static int microbL_create_window(lua_State *L)
     w = microb_lua_int_to_int(luaL_checkinteger(L, 4));
     h = microb_lua_int_to_int(luaL_checkinteger(L, 5));
     microb_push_window(L, 1, x, y, w, h, MICROB_WINDOW_SHOWN);
+    return 1;
+}
+
+static int microbL_create_text(lua_State *L)
+{
+    luaL_checkudata(L, 1, MICROB_META_WINDOW);
+    luaL_checkstring(L, 2);
+    microb_push_text(L, 2, 1);
     return 1;
 }
 
@@ -66,8 +75,11 @@ static int microbL_main_loop(lua_State *L)
                     MICROB_META_WINDOW
             );
             if(win->freed)
+            {
+                lua_pop(L, 1);
                 continue;
-            (*win->vtable.draw)(win);
+            }
+            (*win->vtable.draw)(L, win);
             SDL_RenderPresent(win->renderer);
             lua_pop(L, 1);
         }
@@ -77,6 +89,7 @@ static int microbL_main_loop(lua_State *L)
 
 static luaL_Reg regs[] = {
         {"create_window", microbL_create_window },
+        {"create_text", microbL_create_text},
         {"main_loop", microbL_main_loop},
 };
 
@@ -87,9 +100,31 @@ int luaopen_microb(lua_State *L)
     lua_setfield(L, -2, "__gc");
     lua_pop(L, 1);
 
+    luaL_newmetatable(L, MICROB_META_TEXT);
+    lua_pushcfunction(L, &microbL_text_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_pop(L, 1);
+
     lua_newtable(L);
     lua_setfield(L, LUA_REGISTRYINDEX, MICROB_WINDOW_LIST_FIELD);
 
+    lua_newtable(L);
+    lua_setfield(L, LUA_REGISTRYINDEX, MICROB_REF_TABLE_FIELD);
+
     luaL_newlib(L, regs);
     return 1;
+}
+
+void microb_print_stack(lua_State *L)
+{
+    printf("%d elements\n", lua_gettop(L));
+    int top = lua_gettop(L);
+    lua_pushnil(L);
+    for(int i = 1; i <= top; i++)
+    {
+        lua_copy(L, i, top + 1);
+        const char *value = lua_tostring(L, top + 1);
+        printf("  %d: %s %s\n", i, lua_typename(L, lua_type(L, i)), value);
+    }
+    lua_pop(L, 1);
 }

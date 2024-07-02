@@ -18,9 +18,11 @@ typedef struct microb_window
     SDL_Renderer *renderer;
     bool freed;
 
+    int component_list_ref;
+
     struct
     {
-        void (*draw)(struct microb_window *self);
+        void (*draw)(lua_State *L, struct microb_window *self);
     } vtable;
 } microb_window;
 
